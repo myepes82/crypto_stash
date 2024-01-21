@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -8,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -92,6 +94,7 @@ func main() {
 		"1) List secrets",
 		"2) Add new secret",
 		"3) Get one secret",
+		"0) Exit",
 	}
 
 	prompt := promptui.Select{
@@ -106,19 +109,26 @@ func main() {
 			break
 		}
 		chosenOption, err := strconv.Atoi(result[:1])
-		processCryptoAction(chosenOption, &secretsData, secretKey)
+		if !processCryptoAction(chosenOption, &secretsData, secretKey) {
+			break
+		}
 	}
 
 }
-func processCryptoAction(chosenOption int, secretsData *SecretsStruct, secretKey []byte) {
+func processCryptoAction(chosenOption int, secretsData *SecretsStruct, secretKey []byte) bool {
 	switch chosenOption {
 	case 1:
 		listSecrets(*secretsData)
 	case 2:
 		addNewSecret(secretsData, secretKey)
+	case 3:
+		getOneSecret(secretsData, secretKey)
+	case 0:
+		return false
 	default:
 		fmt.Println("ToDo")
 	}
+	return true
 }
 func handleUnknownError(err error) {
 	fmt.Printf(Red+"An unexpected error has occurred: %v"+Reset, err)
@@ -238,68 +248,86 @@ func loadSecretsInfo(secretsData *SecretsStruct) error {
 	}
 	return nil
 }
-func listSecrets(secretsData SecretsStruct) {
-	fmt.Println(Green + "================= Listing secrets ================" + Reset)
-	for key, value := range secretsData.Secrets {
-		fmt.Printf(Yellow+"Name: "+Reset+"%s "+Yellow+"Secret: "+Reset+"%s \n", key, value)
-	}
-	fmt.Println(Green + "========================||========================" + Reset)
+func pkcs7Pad(data []byte, blockSize int) []byte {
+	padding := blockSize - (len(data) % blockSize)
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(data, padText...)
+}
+func pkcs7Unpad(data []byte) []byte {
+	padding := int(data[len(data)-1])
+	return data[:len(data)-padding]
 }
 func encryptSecret(secret string, secretKey []byte) ([]byte, error) {
 	block, err := aes.NewCipher(secretKey)
 	if err != nil {
 		return nil, err
 	}
-	nonce := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+
+	paddedSecret := pkcs7Pad([]byte(secret), aes.BlockSize)
+
+	iv := make([]byte, aes.BlockSize)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return nil, err
 	}
 
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	ciphertext := aesGCM.Seal(nil, nonce, []byte(secret), nil)
+	mode := cipher.NewCBCEncrypter(block, iv)
 
-	ciphertext = append(nonce, ciphertext...)
+	ciphertext := make([]byte, len(paddedSecret))
+	mode.CryptBlocks(ciphertext, paddedSecret)
 
-	return ciphertext, nil
+	result := append(iv, ciphertext...)
+
+	return result, nil
 }
 func generateSecretTextFile(secret string, secretKey []byte, secretUUid string) error {
 
 	encryptedSecret, err := encryptSecret(secret, secretKey)
 	if err != nil {
+		log.Fatal("Here the error")
 		handleUnknownError(err)
 	}
-	fileName := fmt.Sprintf("./secrets/%s.txt", secretUUid)
+	fileName := secretUUid + ".txt"
+	filePath := fmt.Sprintf("./secrets/%s", fileName)
 
-	err = os.WriteFile(fileName, encryptedSecret, 0644)
+	_, err = os.Stat("secrets")
+	if err != nil && os.IsNotExist(err) {
+		err = os.Mkdir("secrets", 0755)
+		if err != nil {
+			handleUnknownError(err)
+		}
+	}
+	err = os.WriteFile(filePath, encryptedSecret, 0644)
 	if err != nil {
 		handleUnknownError(err)
 	}
 	println(Green + fileName + "file was created" + Reset)
 	return nil
 }
-func decryptSecret(secret []byte, secretKey []byte) ([]byte, error) {
+func decryptSecret(secret []byte, secretKey []byte) (string, error) {
 	block, err := aes.NewCipher(secretKey)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	nonce := secret[:aes.BlockSize]
+	iv := secret[:aes.BlockSize]
 	secret = secret[aes.BlockSize:]
 
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
+	mode := cipher.NewCBCDecrypter(block, iv)
 
-	plaintext, err := aesGCM.Open(nil, nonce, secret, nil)
-	if err != nil {
-		return nil, err
-	}
+	mode.CryptBlocks(secret, secret)
 
-	return plaintext, nil
+	plaintext := pkcs7Unpad(secret)
+
+	return string(plaintext), nil
+}
+
+// ====== Functionality =====================
+func listSecrets(secretsData SecretsStruct) {
+	fmt.Println(Green + "================= Listing secrets ================" + Reset)
+	for key, value := range secretsData.Secrets {
+		fmt.Printf(Yellow+"Name: "+Reset+"%s "+Yellow+"Secret: "+Reset+"%s \n", key, value)
+	}
+	fmt.Println(Green + "========================||========================" + Reset)
 }
 func addNewSecret(secrets *SecretsStruct, secretKey []byte) {
 	fmt.Println(Red + "Please fill the following fields" + Reset)
@@ -321,7 +349,7 @@ func addNewSecret(secrets *SecretsStruct, secretKey []byte) {
 		handleUnknownError(err)
 	}
 
-	secretUUid, err := uuid.FromBytes([]byte(secret))
+	secretUUid, err := uuid.NewUUID()
 	if err != nil {
 		handleUnknownError(err)
 	}
@@ -336,5 +364,45 @@ func addNewSecret(secrets *SecretsStruct, secretKey []byte) {
 	}
 
 	go generateSecretTextFile(secret, secretKey, secretUUidString)
-	fmt.Println(Green + "New secret text file generated" + Reset)
+	fmt.Println(Green + "New secret added generated" + Reset)
+}
+func getOneSecret(secrets *SecretsStruct, secretKey []byte) error {
+	var secretList []string
+	for key := range secrets.Secrets {
+		secretList = append(secretList, key)
+	}
+	prompList := promptui.Select{
+		Label: "Secrets",
+		Items: secretList,
+	}
+
+	_, choosenSecret, err := prompList.Run()
+
+	if err != nil {
+		handleUnknownError(err)
+	}
+
+	secretFound, _ := secrets.GetSecret(choosenSecret)
+
+	secretFilePath := fmt.Sprintf("./secrets/%s.txt", secretFound)
+
+	_, err = os.Stat(secretFilePath)
+	if err != nil && os.IsNotExist(err) {
+		fmt.Println(Red + "Secret file were not found" + Reset)
+		return err
+	}
+
+	data, err := os.ReadFile(secretFilePath)
+
+	if err != nil {
+		fmt.Printf(Red+"An error has ocurred while reading secret file: %v"+Reset, err)
+		return err
+	}
+	decryptedData, err := decryptSecret(data, secretKey)
+	if err != nil {
+		fmt.Println(Red + "The secret could not be decrypted" + Reset)
+		return err
+	}
+	fmt.Println(Yellow + "Secret🔐: " + Reset + decryptedData)
+	return nil
 }

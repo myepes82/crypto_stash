@@ -8,6 +8,12 @@
 *.so
 *.dylib
 
+*.json
+*.txt
+secrets/
+/secrets
+secret_key.txt
+secrets.jsons
 # Test binary, built with `go test -c`
 *.test
 
