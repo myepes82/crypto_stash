@@ -46,7 +46,7 @@ const (
 	SecretsFileName = "secrets.json"
 )
 
-func main() {
+func main2() {
 	var secretsData SecretsStruct
 	var secretKey []byte
 
