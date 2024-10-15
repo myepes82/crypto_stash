@@ -20,7 +20,7 @@ func NewEncryptionService(logger infrastructure.Logger) *EncryptionService {
 	}
 }
 
-func (service *EncryptionService) Encrypt(secret string, key []byte) ([]byte, error) {
+func (service *EncryptionService) Execute(secret string, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err

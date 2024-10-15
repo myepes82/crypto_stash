@@ -14,14 +14,16 @@ func main() {
 	//Services
 	encryptionService := services.NewEncryptionService(*logger)
 	decryptionService := services.NewDecryptionService(*logger)
+	createSecretKeyService := services.NewCreatingSecretKeyService(*logger)
 
 	//Application
 	application := internal.NewApplication(
 		logger,
 		encryptionService,
 		decryptionService,
+		createSecretKeyService,
 	)
 
-	console := cmd.NewCmdApplication(logger, application)
+	console := cmd.NewCmdApplication(application)
 	console.Init()
 }

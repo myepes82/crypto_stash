@@ -17,7 +17,7 @@ func NewDecryptionService(logger infrastructure.Logger) *DecryptionService {
 	}
 }
 
-func (service *DecryptionService) Decrypt(secret []byte, key []byte) (string, error) {
+func (service *DecryptionService) Execute(secret []byte, key []byte) (string, error) {
 	service.logger.LogDebug("")
 	block, err := aes.NewCipher(key)
 	if err != nil {

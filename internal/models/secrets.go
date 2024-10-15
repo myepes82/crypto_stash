@@ -8,7 +8,10 @@ type Secrets struct {
 }
 
 func NewSecrets() *Secrets {
-	return &Secrets{}
+	return &Secrets{
+		Changelog: time.Now(),
+		Content:   make(map[string]string),
+	}
 }
 
 func (s *Secrets) UpdateChangelog() {

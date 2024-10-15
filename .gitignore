@@ -25,3 +25,5 @@ secrets.jsons
 
 # Go workspace file
 go.work
+
+./secrets

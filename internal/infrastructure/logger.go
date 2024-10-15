@@ -26,8 +26,8 @@ func (l *Logger) LogDebug(message string) {
 	log(message, greenLogColor)
 }
 
-func (l *Logger) LogError(message string) {
-	log(message, redLogColor)
+func (l *Logger) LogError(error error) {
+	log(error.Error(), redLogColor)
 }
 
 func log(message string, color string) {
